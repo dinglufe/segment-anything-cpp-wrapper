@@ -3,7 +3,8 @@ import numpy as np
 import os
 from segment_anything import sam_model_registry, SamPredictor
 from segment_anything.utils.transforms import ResizeLongestSide
-
+from onnxruntime.quantization import QuantType
+from onnxruntime.quantization.quantize import quantize_dynamic
 
 # Generate preprocessing model of Segment-anything in onnx format
 # Target image size is 1024x720
@@ -14,7 +15,9 @@ checkpoint = 'sam_vit_h_4b8939.pth'
 model_type = 'vit_h'
 output_path = 'models/sam_preprocess.onnx'
 
-os.makedirs(os.path.dirname(output_path), exist_ok=True)
+# The raw directory can be deleted after the quantization is done
+output_raw_path = os.path.dirname(output_path) + '/raw/sam_preprocess.onnx'
+os.makedirs(os.path.dirname(output_raw_path), exist_ok=True)
 
 sam = sam_model_registry[model_type](checkpoint=checkpoint)
 sam.to(device='cpu')
@@ -42,5 +45,14 @@ class Model(torch.nn.Module):
 
 model = Model(image_size, checkpoint, model_type)
 model_trace = torch.jit.trace(model, input_image_torch)
-torch.onnx.export(model_trace, input_image_torch, output_path,
+torch.onnx.export(model_trace, input_image_torch, output_raw_path,
                   input_names=['input'], output_names=['output'])
+
+quantize_dynamic(
+    model_input=output_raw_path,
+    model_output=output_path,
+    optimize_model=True,
+    per_channel=False,
+    reduce_range=False,
+    weight_type=QuantType.QUInt8,
+)
