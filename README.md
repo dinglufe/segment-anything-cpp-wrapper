@@ -38,9 +38,18 @@ auto inputSize = sam.getInputSize();
 cv::Mat image = cv::imread("input.jpg", -1);
 cv::resize(image, image, inputSize);
 sam.loadImage(image);
+
+// Using SAM with prompts (input: x, y)
 cv::Mat mask = sam.getMask({200, 300});
 cv::imwrite("output.png", mask);
+
+// Automatically generating masks (input: number of points each side)
+// Slow since running on CPU and the result is not as good as official demo
+cv::Mat maskAuto = sam.autoSegment({10, 10});
+cv::imwrite("output_auto.png", mask);
 ```
+
+More details can be found in [test.cpp](test.cpp) and [sam.h](sam.h).
 
 The "sam_vit_h_4b8939.onnx" model can be exported using the [official steps](https://github.com/facebookresearch/segment-anything#onnx-export). The "sam_preprocess.onnx" model need to be exported using the [export_pre_model](export_pre_model.py) script (see below).
 

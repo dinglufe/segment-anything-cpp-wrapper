@@ -44,7 +44,8 @@ int main(int argc, char** argv) {
     return -1;
   }
 
-  std::cout << "Now click on the image (press q/esc to quit; press c to clear selection)"
+  std::cout << "Now click on the image (press q/esc to quit; press c to clear selection; press a "
+               "to run automatic segmentation)"
             << std::endl;
 
   cv::Point clickedPoint;
@@ -94,9 +95,8 @@ int main(int argc, char** argv) {
       std::cout << "Automatically generating masks with " << sampleSize.area()
                 << " input points ..." << std::endl;
 
-      auto mask = sam.autoSegment(sampleSize, [](double v) {
-        std::cout << "\rProgress: " << int(v * 100) << "%\t";
-      });
+      auto mask = sam.autoSegment(
+          sampleSize, [](double v) { std::cout << "\rProgress: " << int(v * 100) << "%\t"; });
       SHOW_TIME
 
       const double overlayFactor = 0.5;
