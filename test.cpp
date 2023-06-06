@@ -61,10 +61,20 @@ int main(int argc, char** argv) {
       },
       &clickedPoint);
 
+#define SHOW_TIME                                                     \
+  std::cout << "Time elapsed: "                                       \
+            << std::chrono::duration_cast<std::chrono::milliseconds>( \
+                   std::chrono::system_clock::now() - timeNow)        \
+                   .count()                                           \
+            << " ms" << std::endl;
+
   bool bRunning = true;
   while (bRunning) {
+    const auto timeNow = std::chrono::system_clock::now();
+
     if (clickedPoint.x > 0 && clickedPoint.y > 0) {
       cv::Mat mask = sam.getMask(clickedPoint);
+      SHOW_TIME
       clickedPoint = {};
 
       // apply mask to image
@@ -76,7 +86,50 @@ int main(int argc, char** argv) {
           outImage.at<cv::Vec3b>(i, j) = image.at<cv::Vec3b>(i, j) * factor;
         }
       }
+    } else if (clickedPoint == cv::Point{-2, -2}) {
+      clickedPoint = {};
+      int step = 40;
+      cv::Size sampleSize = {image.cols / step, image.rows / step};
+
+      std::cout << "Automatically generating masks with " << sampleSize.area()
+                << " input points ..." << std::endl;
+
+      auto mask = sam.autoSegment(sampleSize, [](double v) {
+        std::cout << "\rProgress: " << int(v * 100) << "%\t";
+      });
+      SHOW_TIME
+
+      const double overlayFactor = 0.5;
+      const int maxMaskValue = 255 * (1 - overlayFactor);
+      outImage = cv::Mat::zeros(image.size(), CV_8UC3);
+
+      static std::map<int, cv::Vec3b> colors;
+
+      for (int i = 0; i < image.rows; i++) {
+        for (int j = 0; j < image.cols; j++) {
+          auto value = (int)mask.at<double>(i, j);
+          if (value <= 0) {
+            continue;
+          }
+
+          auto it = colors.find(value);
+          if (it == colors.end()) {
+            colors.insert(it, {value, cv::Vec3b(rand() % maxMaskValue, rand() % maxMaskValue,
+                                                rand() % maxMaskValue)});
+          }
+
+          outImage.at<cv::Vec3b>(i, j) = it->second + image.at<cv::Vec3b>(i, j) * overlayFactor;
+        }
+      }
+
+      // draw circles on the image to indicate the sample points
+      for (int i = 0; i < sampleSize.height; i++) {
+        for (int j = 0; j < sampleSize.width; j++) {
+          cv::circle(outImage, {j * step, i * step}, 2, {0, 0, 255}, -1);
+        }
+      }
     }
+
     cv::imshow(g_windowName, outImage);
     int key = cv::waitKeyEx(100);
     switch (key) {
@@ -88,6 +141,10 @@ int main(int argc, char** argv) {
         clickedPoint = {};
         outImage = image.clone();
       } break;
+      case 'a': {
+        clickedPoint = {-2, -2};
+        outImage = image.clone();
+      }
     }
   }
 

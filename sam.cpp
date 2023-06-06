@@ -73,8 +73,6 @@ struct SamModel {
     std::vector<uint8_t> inputTensorValues(inputShapePre[0] * inputShapePre[1] * inputShapePre[2] *
                                            inputShapePre[3]);
 
-    // cv::Mat image = cv::imread(imagePath, -1);
-    // cv::resize(image, image, cv::Size(input_shape[3], input_shape[2]));
     if (image.size() != cv::Size(inputShapePre[3], inputShapePre[2])) {
       std::cerr << "Image size not match" << std::endl;
       return false;
@@ -112,7 +110,7 @@ struct SamModel {
     return true;
   }
 
-  cv::Mat getMask(const cv::Point& point) const {
+  void getMask(const cv::Point& point, cv::Mat& outputMaskSam, double& iouValue) const {
     const size_t maskInputSize = 256 * 256;
     float inputPointValues[] = {(float)point.x, (float)point.y}, inputLabelValues[] = {1},
           maskInputValues[maskInputSize], hasMaskValues[] = {0},
@@ -144,13 +142,18 @@ struct SamModel {
                                             inputTensorsSam.size(), outputNamesSam, 3);
 
     auto outputMasksValues = outputTensorsSam[0].GetTensorMutableData<float>();
-    cv::Mat outputMaskSam(inputShapePre[2], inputShapePre[3], CV_8UC1);
+    if (outputMaskSam.type() != CV_8UC1 ||
+        outputMaskSam.size() != cv::Size(inputShapePre[3], inputShapePre[2])) {
+      outputMaskSam = cv::Mat(inputShapePre[2], inputShapePre[3], CV_8UC1);
+    }
+
     for (int i = 0; i < outputMaskSam.rows; i++) {
       for (int j = 0; j < outputMaskSam.cols; j++) {
         outputMaskSam.at<uchar>(i, j) = outputMasksValues[i * outputMaskSam.cols + j] > 0 ? 255 : 0;
       }
     }
-    return outputMaskSam;
+
+    iouValue = outputTensorsSam[1].GetTensorMutableData<float>()[0];
   }
 };
 
@@ -161,4 +164,87 @@ Sam::~Sam() { delete m_model; }
 cv::Size Sam::getInputSize() const { return m_model->getInputSize(); }
 bool Sam::loadImage(const cv::Mat& image) { return m_model->loadImage(image); }
 
-cv::Mat Sam::getMask(const cv::Point& point) const { return m_model->getMask(point); }
+cv::Mat Sam::getMask(const cv::Point& point, double* iou) const {
+  double iouValue = 0;
+  cv::Mat m;
+  m_model->getMask(point, m, iouValue);
+  if (iou != nullptr) {
+    *iou = iouValue;
+  }
+  return m;
+}
+
+// Just a poor version of https://github.com/facebookresearch/segment-anything/blob/main/notebooks/automatic_mask_generator_example.ipynb
+cv::Mat Sam::autoSegment(const cv::Size& numPoints, cbProgress cb, const double iouThreshold,
+                         const double minArea, int* numObjects) const {
+  if (numPoints.empty()) {
+    return {};
+  }
+
+  const auto size = getInputSize();
+  cv::Mat mask, outImage = cv::Mat::zeros(size, CV_64FC1);
+
+  std::vector<double> masksAreas;
+
+  for (int i = 0; i < numPoints.height; i++) {
+    for (int j = 0; j < numPoints.width; j++) {
+      if (cb) {
+        cb(double(i * numPoints.width + j) / (numPoints.width * numPoints.height));
+      }
+
+      cv::Point input(cv::Point((j + 0.5) * size.width / numPoints.width,
+                                (i + 0.5) * size.height / numPoints.height));
+
+      double iou;
+      m_model->getMask(input, mask, iou);
+      if (mask.empty() || iou < iouThreshold) {
+        continue;
+      }
+
+      std::vector<std::vector<cv::Point>> contours;
+      cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+      if (contours.empty()) {
+        continue;
+      }
+
+      int maxContourIndex = 0;
+      double maxContourArea = 0;
+      for (int i = 0; i < contours.size(); i++) {
+        double area = cv::contourArea(contours[i]);
+        if (area > maxContourArea) {
+          maxContourArea = area;
+          maxContourIndex = i;
+        }
+      }
+      if (maxContourArea < minArea) {
+        continue;
+      }
+
+      cv::Mat contourMask = cv::Mat::zeros(size, CV_8UC1);
+      cv::drawContours(contourMask, contours, maxContourIndex, cv::Scalar(255), cv::FILLED);
+      cv::Rect boundingBox = cv::boundingRect(contours[maxContourIndex]);
+
+      int index = masksAreas.size() + 1, numPixels = 0;
+      for (int i = boundingBox.y; i < boundingBox.y + boundingBox.height; i++) {
+        for (int j = boundingBox.x; j < boundingBox.x + boundingBox.width; j++) {
+          if (contourMask.at<uchar>(i, j) == 0) {
+            continue;
+          }
+
+          auto dst = (int)outImage.at<double>(i, j);
+          if (dst > 0 && masksAreas[dst - 1] < maxContourArea) {
+            continue;
+          }
+          outImage.at<double>(i, j) = index;
+          numPixels++;
+        }
+      }
+      if (numPixels == 0) {
+        continue;
+      }
+
+      masksAreas.emplace_back(maxContourArea);
+    }
+  }
+  return outImage;
+}
