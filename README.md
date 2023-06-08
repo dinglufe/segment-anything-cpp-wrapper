@@ -43,6 +43,10 @@ sam.loadImage(image);
 cv::Mat mask = sam.getMask({200, 300});
 cv::imwrite("output.png", mask);
 
+// Using SAM with multiple prompts (input: points, nagativePoints)
+cv::Mat mask = sam.getMask(points, nagativePoints);
+cv::imwrite("output-multi.png", mask);
+
 // Automatically generating masks (input: number of points each side)
 // Slow since running on CPU and the result is not as good as official demo
 cv::Mat maskAuto = sam.autoSegment({10, 10});

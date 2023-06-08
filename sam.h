@@ -20,7 +20,10 @@ class Sam {
   cv::Size getInputSize() const;
   bool loadImage(const cv::Mat& image);
 
+  cv::Mat getMask(const std::list<cv::Point>& points, const std::list<cv::Point>& negativePoints,
+                  double* iou = nullptr) const;
   cv::Mat getMask(const cv::Point& point, double* iou = nullptr) const;
+
   using cbProgress = void (*)(double);
   cv::Mat autoSegment(const cv::Size& numPoints, cbProgress cb = {},
                       const double iouThreshold = 0.86, const double minArea = 100,

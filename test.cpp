@@ -45,10 +45,11 @@ int main(int argc, char** argv) {
   }
 
   std::cout << "Now click on the image (press q/esc to quit; press c to clear selection; press a "
-               "to run automatic segmentation)"
-            << std::endl;
+               "to run automatic segmentation)\n"
+            << "Ctrl+Left click to select foreground, Ctrl+Right click to select background\n";
 
-  cv::Point clickedPoint;
+  std::list<cv::Point3i> clickedPoints;
+  cv::Point3i newClickedPoint(-1, 0, 0);
   cv::Mat outImage = image.clone();
 
   auto g_windowName = "Segment Anything CPP Demo";
@@ -56,11 +57,21 @@ int main(int argc, char** argv) {
   cv::setMouseCallback(
       g_windowName,
       [](int event, int x, int y, int flags, void* userdata) {
+        int code = -1;
         if (event == cv::EVENT_LBUTTONDOWN) {
-          *(cv::Point*)userdata = {x, y};
+          code = 2;
+        } else if (event == cv::EVENT_RBUTTONDOWN) {
+          code = 0;
+        }
+        if (code >= 0) {
+          if ((flags & cv::EVENT_FLAG_CTRLKEY) == cv::EVENT_FLAG_CTRLKEY) {
+            // If ctrl is pressed, then append it to the list later
+            code += 1;
+          }
+          *(cv::Point3i*)userdata = {x, y, code};
         }
       },
-      &clickedPoint);
+      &newClickedPoint);
 
 #define SHOW_TIME                                                     \
   std::cout << "Time elapsed: "                                       \
@@ -73,10 +84,24 @@ int main(int argc, char** argv) {
   while (bRunning) {
     const auto timeNow = std::chrono::system_clock::now();
 
-    if (clickedPoint.x > 0 && clickedPoint.y > 0) {
-      cv::Mat mask = sam.getMask(clickedPoint);
+    if (newClickedPoint.x > 0) {
+      std::list<cv::Point> points, nagativePoints;
+      if (newClickedPoint.z % 2 == 0) {
+        clickedPoints = {newClickedPoint};
+      } else {
+        clickedPoints.push_back(newClickedPoint);
+      }
+
+      for (auto& p : clickedPoints) {
+        if (p.z >= 2) {
+          points.push_back({p.x, p.y});
+        } else {
+          nagativePoints.push_back({p.x, p.y});
+        }
+      }
+      cv::Mat mask = sam.getMask(points, nagativePoints);
+      newClickedPoint.x = -1;
       SHOW_TIME
-      clickedPoint = {};
 
       // apply mask to image
       outImage = cv::Mat::zeros(image.size(), CV_8UC3);
@@ -87,8 +112,15 @@ int main(int argc, char** argv) {
           outImage.at<cv::Vec3b>(i, j) = image.at<cv::Vec3b>(i, j) * factor;
         }
       }
-    } else if (clickedPoint == cv::Point{-2, -2}) {
-      clickedPoint = {};
+
+      for (auto& p : points) {
+        cv::circle(outImage, p, 2, {0, 255, 255}, -1);
+      }
+      for (auto& p : nagativePoints) {
+        cv::circle(outImage, p, 2, {255, 0, 0}, -1);
+      }
+    } else if (newClickedPoint.x == -2) {
+      newClickedPoint.x = -1;
       int step = 40;
       cv::Size sampleSize = {image.cols / step, image.rows / step};
 
@@ -134,15 +166,20 @@ int main(int argc, char** argv) {
     int key = cv::waitKeyEx(100);
     switch (key) {
       case 27:
+      case 'Q':
       case 'q': {
         bRunning = false;
       } break;
+      case 'C':
       case 'c': {
-        clickedPoint = {};
+        clickedPoints.clear();
+        newClickedPoint.x = -1;
         outImage = image.clone();
       } break;
+      case 'A':
       case 'a': {
-        clickedPoint = {-2, -2};
+        clickedPoints.clear();
+        newClickedPoint.x = -2;
         outImage = image.clone();
       }
     }

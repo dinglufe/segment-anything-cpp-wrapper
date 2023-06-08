@@ -110,14 +110,27 @@ struct SamModel {
     return true;
   }
 
-  void getMask(const cv::Point& point, cv::Mat& outputMaskSam, double& iouValue) const {
+  void getMask(const std::list<cv::Point>& points, const std::list<cv::Point>& negativePoints,
+               cv::Mat& outputMaskSam, double& iouValue) const {
     const size_t maskInputSize = 256 * 256;
-    float inputPointValues[] = {(float)point.x, (float)point.y}, inputLabelValues[] = {1},
-          maskInputValues[maskInputSize], hasMaskValues[] = {0},
-          orig_im_size_values[] = {(float)inputShapePre[2], (float)inputShapePre[3]};
+    float maskInputValues[maskInputSize],
+        hasMaskValues[] = {0},
+        orig_im_size_values[] = {(float)inputShapePre[2], (float)inputShapePre[3]};
     memset(maskInputValues, 0, sizeof(maskInputValues));
 
-    int numPoints = 1;
+    std::vector<float> inputPointValues, inputLabelValues;
+    for (auto& point : points) {
+      inputPointValues.push_back((float)point.x);
+      inputPointValues.push_back((float)point.y);
+      inputLabelValues.push_back(1);
+    }
+    for (auto& point : negativePoints) {
+      inputPointValues.push_back((float)point.x);
+      inputPointValues.push_back((float)point.y);
+      inputLabelValues.push_back(0);
+    }
+
+    const int numPoints = inputLabelValues.size();
     std::vector<int64_t> inputPointShape = {1, numPoints, 2}, pointLabelsShape = {1, numPoints},
                          maskInputShape = {1, 1, 256, 256}, hasMaskInputShape = {1},
                          origImSizeShape = {2};
@@ -126,10 +139,12 @@ struct SamModel {
     inputTensorsSam.push_back(Ort::Value::CreateTensor<float>(
         memoryInfo, (float*)outputTensorValuesPre.data(), outputTensorValuesPre.size(),
         outputShapePre.data(), outputShapePre.size()));
-    inputTensorsSam.push_back(Ort::Value::CreateTensor<float>(
-        memoryInfo, inputPointValues, 2, inputPointShape.data(), inputPointShape.size()));
-    inputTensorsSam.push_back(Ort::Value::CreateTensor<float>(
-        memoryInfo, inputLabelValues, 1, pointLabelsShape.data(), pointLabelsShape.size()));
+    inputTensorsSam.push_back(Ort::Value::CreateTensor<float>(memoryInfo, inputPointValues.data(),
+                                                              2 * numPoints, inputPointShape.data(),
+                                                              inputPointShape.size()));
+    inputTensorsSam.push_back(Ort::Value::CreateTensor<float>(memoryInfo, inputLabelValues.data(),
+                                                              numPoints, pointLabelsShape.data(),
+                                                              pointLabelsShape.size()));
     inputTensorsSam.push_back(Ort::Value::CreateTensor<float>(
         memoryInfo, maskInputValues, maskInputSize, maskInputShape.data(), maskInputShape.size()));
     inputTensorsSam.push_back(Ort::Value::CreateTensor<float>(
@@ -165,16 +180,22 @@ cv::Size Sam::getInputSize() const { return m_model->getInputSize(); }
 bool Sam::loadImage(const cv::Mat& image) { return m_model->loadImage(image); }
 
 cv::Mat Sam::getMask(const cv::Point& point, double* iou) const {
+  return getMask({point}, {}, iou);
+}
+
+cv::Mat Sam::getMask(const std::list<cv::Point>& points, const std::list<cv::Point>& negativePoints,
+                     double* iou) const {
   double iouValue = 0;
   cv::Mat m;
-  m_model->getMask(point, m, iouValue);
+  m_model->getMask(points, negativePoints, m, iouValue);
   if (iou != nullptr) {
     *iou = iouValue;
   }
   return m;
 }
 
-// Just a poor version of https://github.com/facebookresearch/segment-anything/blob/main/notebooks/automatic_mask_generator_example.ipynb
+// Just a poor version of
+// https://github.com/facebookresearch/segment-anything/blob/main/notebooks/automatic_mask_generator_example.ipynb
 cv::Mat Sam::autoSegment(const cv::Size& numPoints, cbProgress cb, const double iouThreshold,
                          const double minArea, int* numObjects) const {
   if (numPoints.empty()) {
@@ -196,7 +217,7 @@ cv::Mat Sam::autoSegment(const cv::Size& numPoints, cbProgress cb, const double 
                                 (i + 0.5) * size.height / numPoints.height));
 
       double iou;
-      m_model->getMask(input, mask, iou);
+      m_model->getMask({input}, {}, mask, iou);
       if (mask.empty() || iou < iouThreshold) {
         continue;
       }
