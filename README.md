@@ -2,7 +2,7 @@
 
 This project is to create a C++ interface that enables direct invocation of [Segment Anything](https://github.com/facebookresearch/segment-anything) deep learning model, with no dependence on Python libraries during runtime. The code repository contains a C++ library with a test program to facilitate easy integration of the interface into other projects.
 
-Currently, the interface only supports CPU execution, which results in reduced efficiency. Model loading takes approximately 10 seconds, and a single inference takes around 20ms, obtained using Intel Xeon W-2145 CPU (16 threads). During runtime, the interface may consume around 6GB memory if running on CPU, and 16GB if running on CUDA.
+Model loading takes approximately 10 seconds, and a single inference takes around 20ms, obtained using Intel Xeon W-2145 CPU (16 threads). During runtime, the interface may consume around 6GB memory if running on CPU, and 16GB if running on CUDA.
 
 Currently, the software is only supported on Windows and may encounter issues when running on Linux.
 
@@ -15,7 +15,7 @@ Image by <a href="https://pixabay.com/users/brenda2102-30343687/?utm_source=link
 
 Usage:
 
-Download all-in-one.zip in the release page, unzip it, and run sam_cpp_test directly or in command line:
+Download compressed file in the release page, unzip it, and run sam_cpp_test directly or in command line:
 
 ```bash
 # Show help
