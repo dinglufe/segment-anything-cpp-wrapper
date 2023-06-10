@@ -11,7 +11,7 @@
 
 struct SamModel {
   Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "test"};
-  Ort::SessionOptions sessionOptions;
+  Ort::SessionOptions sessionOptions[2];
   std::unique_ptr<Ort::Session> sessionPre, sessionSam;
   std::vector<int64_t> inputShapePre, outputShapePre;
   Ort::MemoryInfo memoryInfo{Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)};
@@ -22,8 +22,8 @@ struct SamModel {
                                "mask_input",       "has_mask_input", "orig_im_size"},
       *outputNamesSam[3]{"masks", "iou_predictions", "low_res_masks"};
 
-  SamModel(const std::string& preModelPath, const std::string& samModelPath, int threadsNumber) {
-    for (auto& p : {samModelPath, samModelPath}) {
+  SamModel(const Sam::Parameter& param) {
+    for (auto& p : param.models) {
       std::ifstream f(p);
       if (!f.good()) {
         std::cerr << "Model file " << p << " not found" << std::endl;
@@ -31,25 +31,39 @@ struct SamModel {
       }
     }
 
-    sessionOptions.SetIntraOpNumThreads(threadsNumber);
-    sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+    for (int i = 0; i < 2; i++) {
+      auto& provider = param.providers[i];
+      auto& option = sessionOptions[i];
+
+      option.SetIntraOpNumThreads(param.threadsNumber);
+      option.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+
+      if (provider.deviceType == 1) {
+        OrtCUDAProviderOptions options;
+        options.device_id = provider.gpuDeviceId;
+        if (provider.gpuMemoryLimit > 0) {
+          options.gpu_mem_limit = provider.gpuMemoryLimit;
+        }
+        option.AppendExecutionProvider_CUDA(options);
+      }
+    }
 
 #if _MSC_VER
     std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-    auto wpreModelPath = converter.from_bytes(preModelPath);
-    auto wsamModelPath = converter.from_bytes(samModelPath);
+    auto wpreModelPath = converter.from_bytes(param.models[0]);
+    auto wsamModelPath = converter.from_bytes(param.models[1]);
 #else
-    auto wpreModelPath = preModelPath;
-    auto wsamModelPath = samModelPath;
+    auto wpreModelPath = param.models[0];
+    auto wsamModelPath = param.models[1];
 #endif
 
-    sessionPre = std::make_unique<Ort::Session>(env, wpreModelPath.c_str(), sessionOptions);
+    sessionPre = std::make_unique<Ort::Session>(env, wpreModelPath.c_str(), sessionOptions[0]);
     if (sessionPre->GetInputCount() != 1 || sessionPre->GetOutputCount() != 1) {
       std::cerr << "Preprocessing model not loaded (invalid input/output count)" << std::endl;
       return;
     }
 
-    sessionSam = std::make_unique<Ort::Session>(env, wsamModelPath.c_str(), sessionOptions);
+    sessionSam = std::make_unique<Ort::Session>(env, wsamModelPath.c_str(), sessionOptions[1]);
     if (sessionSam->GetInputCount() != 6 || sessionSam->GetOutputCount() != 3) {
       std::cerr << "Model not loaded (invalid input/output count)" << std::endl;
       return;
@@ -173,7 +187,10 @@ struct SamModel {
 };
 
 Sam::Sam(const std::string& preModelPath, const std::string& samModelPath, int threadsNumber)
-    : m_model(new SamModel(preModelPath, samModelPath, threadsNumber)) {}
+    : Sam(Parameter(preModelPath, samModelPath, threadsNumber)) {}
+
+Sam::Sam(const Parameter& param) : m_model(new SamModel(param)) {}
+
 Sam::~Sam() { delete m_model; }
 
 cv::Size Sam::getInputSize() const { return m_model->getInputSize(); }

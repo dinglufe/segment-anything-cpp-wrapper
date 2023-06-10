@@ -14,7 +14,27 @@ class Sam {
   SamModel* m_model{nullptr};
 
  public:
-  explicit Sam(const std::string& preModelPath, const std::string& samModelPath, int threadsNumber);
+  struct Parameter {
+    // Partial options of OrtCUDAProviderOptions to hide the dependency on onnxruntime
+    struct Provider {
+      // deviceType: 0 - CPU, 1 - CUDA
+      int gpuDeviceId{0}, deviceType{0};
+      size_t gpuMemoryLimit{0};
+    };
+    Provider providers[2];  // 0 - embedding, 1 - segmentation
+    std::string models[2];  // 0 - embedding, 1 - segmentation
+    int threadsNumber{1};
+    Parameter(const std::string& preModelPath, const std::string& samModelPath, int threadsNumber) {
+      models[0] = preModelPath;
+      models[1] = samModelPath;
+      this->threadsNumber = threadsNumber;
+    }
+  };
+
+  // This constructor is deprecated (cpu runtime only)
+  Sam(const std::string& preModelPath, const std::string& samModelPath, int threadsNumber);
+  // Recommended constructor
+  Sam(const Parameter& param);
   ~Sam();
 
   cv::Size getInputSize() const;

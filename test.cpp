@@ -10,20 +10,44 @@
 DEFINE_string(pre_model, "models/sam_preprocess.onnx", "Path to the preprocessing model");
 DEFINE_string(sam_model, "models/sam_vit_h_4b8939.onnx", "Path to the sam model");
 DEFINE_string(image, "images/input.jpg", "Path to the image to segment");
+DEFINE_string(pre_device, "cpu", "cpu or cuda:0(1,2,3...)");
+DEFINE_string(sam_device, "cpu", "cpu or cuda:0(1,2,3...)");
 DEFINE_bool(h, false, "Show help");
+
+bool parseDeviceName(const std::string& name, Sam::Parameter::Provider& provider) {
+  if (name == "cpu") {
+    provider.deviceType = 0;
+    return true;
+  }
+  if (name.substr(0, 5) == "cuda:") {
+    provider.deviceType = 1;
+    provider.gpuDeviceId = std::stoi(name.substr(5));
+    return true;
+  }
+  return false;
+}
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineNonHelpFlags(&argc, &argv, true);
   if (FLAGS_h) {
     std::cout << "Example: ./sam_cpp_test -pre_model=\"models/sam_preprocess.onnx\" "
                  "-sam_model=\"models/sam_vit_h_4b8939.onnx\" "
-                 "-image=\"images/input.jpg\""
+                 "-image=\"images/input.jpg\" -pre_device=\"cpu\" -sam_device=\"cpu\""
               << std::endl;
     return 0;
   }
 
+  std::cout << "Preprocess device: " << FLAGS_pre_device << "; Sam device: " << FLAGS_sam_device
+            << std::endl;
+
+  Sam::Parameter param(FLAGS_pre_model, FLAGS_sam_model, std::thread::hardware_concurrency());
+  if (!parseDeviceName(FLAGS_pre_device, param.providers[0]) ||
+      !parseDeviceName(FLAGS_sam_device, param.providers[1])) {
+    std::cerr << "Unable to parse device name" << std::endl;
+  }
+
   std::cout << "Loading model..." << std::endl;
-  Sam sam(FLAGS_pre_model, FLAGS_sam_model, std::thread::hardware_concurrency());
+  Sam sam(param);  // FLAGS_pre_model, FLAGS_sam_model, std::thread::hardware_concurrency());
 
   auto inputSize = sam.getInputSize();
   if (inputSize.empty()) {

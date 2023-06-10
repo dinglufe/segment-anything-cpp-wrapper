@@ -2,7 +2,7 @@
 
 This project is to create a C++ interface that enables direct invocation of [Segment Anything](https://github.com/facebookresearch/segment-anything) deep learning model, with no dependence on Python libraries during runtime. The code repository contains a C++ library with a test program to facilitate easy integration of the interface into other projects.
 
-Currently, the interface only supports CPU execution, which results in reduced efficiency. Model loading takes approximately 10 seconds, and a single inference takes around 20ms, obtained using Intel Xeon W-2145 CPU (16 threads). During runtime, the interface may consume around 6GB memory.
+Currently, the interface only supports CPU execution, which results in reduced efficiency. Model loading takes approximately 10 seconds, and a single inference takes around 20ms, obtained using Intel Xeon W-2145 CPU (16 threads). During runtime, the interface may consume around 6GB memory if running on CPU, and 16GB if running on CUDA.
 
 Currently, the software is only supported on Windows and may encounter issues when running on Linux.
 
@@ -21,6 +21,11 @@ Download all-in-one.zip in the release page, unzip it, and run sam_cpp_test dire
 # Show help
 ./sam_cpp_test -h
 
+# Example (change device, use CPU for preprocess and CUDA for sam)
+# If you have multiple GPUs, you can use CUDA:1, CUDA:2, etc.
+# All in cpu or all in cuda is also supported
+./sam_cpp_test -pre_device="cpu" -sam_device="cuda:0"
+
 # Example (default options)
 ./sam_cpp_test -pre_model="models/sam_preprocess.onnx" -sam_model="models/sam_vit_h_4b8939.onnx" -image="images/input.jpg"
 
@@ -33,18 +38,23 @@ Download all-in-one.zip in the release page, unzip it, and run sam_cpp_test dire
 A simple example:
 
 ```cpp
-Sam sam("sam_preprocess.onnx", "sam_vit_h_4b8939.onnx", std::thread::hardware_concurrency());
+// Sam sam("sam_preprocess.onnx", "sam_vit_h_4b8939.onnx", std::thread::hardware_concurrency());
+Sam::Parameter param("sam_preprocess.onnx", "sam_vit_h_4b8939.onnx", std::thread::hardware_concurrency());
+param.providers[0].deviceType = 0; // cpu for preprocess
+param.providers[1].deviceType = 1; // CUDA for sam
+Sam sam(param);
+
 auto inputSize = sam.getInputSize();
 cv::Mat image = cv::imread("input.jpg", -1);
 cv::resize(image, image, inputSize);
-sam.loadImage(image);
+sam.loadImage(image); // Will require 6GB memory if using CPU, 16GB if using CUDA
 
 // Using SAM with prompts (input: x, y)
 cv::Mat mask = sam.getMask({200, 300});
 cv::imwrite("output.png", mask);
 
 // Using SAM with multiple prompts (input: points, nagativePoints)
-cv::Mat mask = sam.getMask(points, nagativePoints);
+cv::Mat mask = sam.getMask(points, nagativePoints); //Will require 1GB memory/graphics memory
 cv::imwrite("output-multi.png", mask);
 
 // Automatically generating masks (input: number of points each side)
