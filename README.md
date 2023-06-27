@@ -57,10 +57,15 @@ cv::imwrite("output.png", mask);
 cv::Mat mask = sam.getMask(points, nagativePoints); //Will require 1GB memory/graphics memory
 cv::imwrite("output-multi.png", mask);
 
+// Using SAM with box prompts (input: points, nagativePoints, box)
+cv::Rect box{444, 296, 171, 397};
+cv::Mat mask = sam.getMask(points, nagativePoints, box);
+cv::imwrite("output-box.png", mask);
+
 // Automatically generating masks (input: number of points each side)
 // Slow since running on CPU and the result is not as good as official demo
 cv::Mat maskAuto = sam.autoSegment({10, 10});
-cv::imwrite("output_auto.png", mask);
+cv::imwrite("output_auto.png", maskAuto);
 ```
 
 More details can be found in [test.cpp](test.cpp) and [sam.h](sam.h).

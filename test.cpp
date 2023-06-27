@@ -70,10 +70,12 @@ int main(int argc, char** argv) {
 
   std::cout << "Now click on the image (press q/esc to quit; press c to clear selection; press a "
                "to run automatic segmentation)\n"
-            << "Ctrl+Left click to select foreground, Ctrl+Right click to select background\n";
+            << "Ctrl+Left click to select foreground, Ctrl+Right click to select background, "
+            << "Middle click and drag to select a region\n";
 
   std::list<cv::Point3i> clickedPoints;
   cv::Point3i newClickedPoint(-1, 0, 0);
+  cv::Rect roi;
   cv::Mat outImage = image.clone();
 
   auto g_windowName = "Segment Anything CPP Demo";
@@ -86,9 +88,15 @@ int main(int argc, char** argv) {
           code = 2;
         } else if (event == cv::EVENT_RBUTTONDOWN) {
           code = 0;
+        } else if (event == cv::EVENT_MBUTTONDOWN ||
+                   ((flags & cv::EVENT_FLAG_MBUTTON) && event == cv::EVENT_MOUSEMOVE)) {
+          code = 4;
+        } else if (event == cv::EVENT_MBUTTONUP) {
+          code = 5;
         }
+
         if (code >= 0) {
-          if ((flags & cv::EVENT_FLAG_CTRLKEY) == cv::EVENT_FLAG_CTRLKEY) {
+          if (code <= 2 && (flags & cv::EVENT_FLAG_CTRLKEY) == cv::EVENT_FLAG_CTRLKEY) {
             // If ctrl is pressed, then append it to the list later
             code += 1;
           }
@@ -110,10 +118,24 @@ int main(int argc, char** argv) {
 
     if (newClickedPoint.x > 0) {
       std::list<cv::Point> points, nagativePoints;
-      if (newClickedPoint.z % 2 == 0) {
-        clickedPoints = {newClickedPoint};
+      if (newClickedPoint.z == 5) {
+        roi = {};
+      } else if (newClickedPoint.z == 4) {
+        if (roi.empty()) {
+          roi = cv::Rect(newClickedPoint.x, newClickedPoint.y, 1, 1);
+        } else {
+          auto tl = roi.tl(), np = cv::Point(newClickedPoint.x, newClickedPoint.y);
+          // construct a rectangle from two points
+          roi = cv::Rect(cv::Point(std::min(tl.x, np.x), std::min(tl.y, np.y)),
+                         cv::Point(std::max(tl.x, np.x), std::max(tl.y, np.y)));
+          std::cout << "Box: " << roi << std::endl;
+        }
       } else {
-        clickedPoints.push_back(newClickedPoint);
+        if (newClickedPoint.z % 2 == 0) {
+          clickedPoints = {newClickedPoint};
+        } else {
+          clickedPoints.push_back(newClickedPoint);
+        }
       }
 
       for (auto& p : clickedPoints) {
@@ -123,8 +145,13 @@ int main(int argc, char** argv) {
           nagativePoints.push_back({p.x, p.y});
         }
       }
-      cv::Mat mask = sam.getMask(points, nagativePoints);
+
       newClickedPoint.x = -1;
+      if (points.empty() && nagativePoints.empty() && roi.empty()) {
+        continue;
+      }
+
+      cv::Mat mask = sam.getMask(points, nagativePoints, roi);
       SHOW_TIME
 
       // apply mask to image
@@ -186,6 +213,10 @@ int main(int argc, char** argv) {
       }
     }
 
+    if (!roi.empty()) {
+      cv::rectangle(outImage, roi, {255, 255, 255}, 2);
+    }
+
     cv::imshow(g_windowName, outImage);
     int key = cv::waitKeyEx(100);
     switch (key) {
@@ -198,6 +229,7 @@ int main(int argc, char** argv) {
       case 'c': {
         clickedPoints.clear();
         newClickedPoint.x = -1;
+        roi = {};
         outImage = image.clone();
       } break;
       case 'A':

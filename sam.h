@@ -41,6 +41,8 @@ class Sam {
   bool loadImage(const cv::Mat& image);
 
   cv::Mat getMask(const std::list<cv::Point>& points, const std::list<cv::Point>& negativePoints,
+                  const cv::Rect& roi, double* iou = nullptr) const;
+  cv::Mat getMask(const std::list<cv::Point>& points, const std::list<cv::Point>& negativePoints,
                   double* iou = nullptr) const;
   cv::Mat getMask(const cv::Point& point, double* iou = nullptr) const;
 

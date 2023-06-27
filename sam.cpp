@@ -125,7 +125,7 @@ struct SamModel {
   }
 
   void getMask(const std::list<cv::Point>& points, const std::list<cv::Point>& negativePoints,
-               cv::Mat& outputMaskSam, double& iouValue) const {
+               const cv::Rect& roi, cv::Mat& outputMaskSam, double& iouValue) const {
     const size_t maskInputSize = 256 * 256;
     float maskInputValues[maskInputSize],
         hasMaskValues[] = {0},
@@ -142,6 +142,15 @@ struct SamModel {
       inputPointValues.push_back((float)point.x);
       inputPointValues.push_back((float)point.y);
       inputLabelValues.push_back(0);
+    }
+    
+    if (!roi.empty()) {
+      inputPointValues.push_back((float)roi.x);
+      inputPointValues.push_back((float)roi.y);
+      inputLabelValues.push_back(2);
+      inputPointValues.push_back((float)roi.br().x);
+      inputPointValues.push_back((float)roi.br().y);
+      inputLabelValues.push_back(3);
     }
 
     const int numPoints = inputLabelValues.size();
@@ -197,14 +206,19 @@ cv::Size Sam::getInputSize() const { return m_model->getInputSize(); }
 bool Sam::loadImage(const cv::Mat& image) { return m_model->loadImage(image); }
 
 cv::Mat Sam::getMask(const cv::Point& point, double* iou) const {
-  return getMask({point}, {}, iou);
+  return getMask({point}, {}, {}, iou);
 }
 
 cv::Mat Sam::getMask(const std::list<cv::Point>& points, const std::list<cv::Point>& negativePoints,
                      double* iou) const {
+  return getMask(points, negativePoints, {}, iou);
+}
+
+cv::Mat Sam::getMask(const std::list<cv::Point>& points, const std::list<cv::Point>& negativePoints,
+                     const cv::Rect& roi, double* iou) const {
   double iouValue = 0;
   cv::Mat m;
-  m_model->getMask(points, negativePoints, m, iouValue);
+  m_model->getMask(points, negativePoints, roi, m, iouValue);
   if (iou != nullptr) {
     *iou = iouValue;
   }
@@ -234,7 +248,7 @@ cv::Mat Sam::autoSegment(const cv::Size& numPoints, cbProgress cb, const double 
                                 (i + 0.5) * size.height / numPoints.height));
 
       double iou;
-      m_model->getMask({input}, {}, mask, iou);
+      m_model->getMask({input}, {}, {}, mask, iou);
       if (mask.empty() || iou < iouThreshold) {
         continue;
       }
