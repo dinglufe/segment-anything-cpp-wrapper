@@ -1,25 +1,45 @@
+import mobile_sam as SAM
 import torch
 import numpy as np
 import os
-from segment_anything import sam_model_registry, SamPredictor
+
+# from segment_anything import sam_model_registry, SamPredictor
 from segment_anything.utils.transforms import ResizeLongestSide
+
 from onnxruntime.quantization import QuantType
 from onnxruntime.quantization.quantize import quantize_dynamic
 
 # Generate preprocessing model of Segment-anything in onnx format
+# Use original segment-anything or mobile-sam model
+
+# Uncomment the following lines to generate preprocessing model of Segment-anything
+# import segment_anything as SAM
+# # Download Segment-anything model "sam_vit_h_4b8939.pth" from https://github.com/facebookresearch/segment-anything#model-checkpoints
+# # and change the path below
+# checkpoint = 'sam_vit_h_4b8939.pth'
+# model_type = 'vit_h'
+# output_path = 'models/sam_preprocess.onnx'
+# quantize = True
+
+# Uncomment the following lines to generate preprocessing model of Mobile-SAM
+# Download Mobile-SAM model "mobile_sam.pt" from https://github.com/ChaoningZhang/MobileSAM/blob/master/weights/mobile_sam.pt
+checkpoint = 'mobile_sam.pt'
+model_type = 'vit_t'
+output_path = 'models/mobile_sam_preprocess.onnx'
+quantize = False
+
 # Target image size is 1024x720
 image_size = (1024, 720)
-# Download Segment-anything model "sam_vit_h_4b8939.pth" from https://github.com/facebookresearch/segment-anything#model-checkpoints
-# and change the path below
-checkpoint = 'sam_vit_h_4b8939.pth'
-model_type = 'vit_h'
-output_path = 'models/sam_preprocess.onnx'
 
-# The raw directory can be deleted after the quantization is done
-output_raw_path = os.path.dirname(output_path) + '/raw/sam_preprocess.onnx'
+output_raw_path = output_path
+if quantize:
+    # The raw directory can be deleted after the quantization is done
+    output_name = os.path.basename(output_path).split('.')[0]
+    output_raw_path = '{}/{}_raw/{}.onnx'.format(
+        os.path.dirname(output_path), output_name, output_name)
 os.makedirs(os.path.dirname(output_raw_path), exist_ok=True)
 
-sam = sam_model_registry[model_type](checkpoint=checkpoint)
+sam = SAM.sam_model_registry[model_type](checkpoint=checkpoint)
 sam.to(device='cpu')
 transform = ResizeLongestSide(sam.image_encoder.img_size)
 
@@ -33,9 +53,9 @@ input_image_torch = input_image_torch.permute(
 class Model(torch.nn.Module):
     def __init__(self, image_size, checkpoint, model_type):
         super().__init__()
-        self.sam = sam_model_registry[model_type](checkpoint=checkpoint)
+        self.sam = SAM.sam_model_registry[model_type](checkpoint=checkpoint)
         self.sam.to(device='cpu')
-        self.predictor = SamPredictor(self.sam)
+        self.predictor = SAM.SamPredictor(self.sam)
         self.image_size = image_size
 
     def forward(self, x):
@@ -48,11 +68,13 @@ model_trace = torch.jit.trace(model, input_image_torch)
 torch.onnx.export(model_trace, input_image_torch, output_raw_path,
                   input_names=['input'], output_names=['output'])
 
-quantize_dynamic(
-    model_input=output_raw_path,
-    model_output=output_path,
-    optimize_model=True,
-    per_channel=False,
-    reduce_range=False,
-    weight_type=QuantType.QUInt8,
-)
+
+if quantize:
+    quantize_dynamic(
+        model_input=output_raw_path,
+        model_output=output_path,
+        optimize_model=True,
+        per_channel=False,
+        reduce_range=False,
+        weight_type=QuantType.QUInt8,
+    )
