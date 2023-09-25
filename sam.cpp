@@ -13,13 +13,15 @@ struct SamModel {
   Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "test"};
   Ort::SessionOptions sessionOptions[2];
   std::unique_ptr<Ort::Session> sessionPre, sessionSam;
-  std::vector<int64_t> inputShapePre, outputShapePre;
+  std::vector<int64_t> inputShapePre, outputShapePre, intermShapePre;
   Ort::MemoryInfo memoryInfo{Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)};
-  bool bModelLoaded = false;
-  std::vector<float> outputTensorValuesPre;
+  bool bModelLoaded = false, bSamHQ = false;
+  std::vector<float> outputTensorValuesPre, intermTensorValuesPre;
 
-  const char *inputNamesSam[6]{"image_embeddings", "point_coords",   "point_labels",
-                               "mask_input",       "has_mask_input", "orig_im_size"},
+  char *inputNamesSam[6]{"image_embeddings", "point_coords",   "point_labels",
+                         "mask_input",       "has_mask_input", "orig_im_size"},
+      *inputNamesSamHQ[7]{"image_embeddings", "interm_embeddings", "point_coords", "point_labels",
+                          "mask_input",       "has_mask_input",    "orig_im_size"},
       *outputNamesSam[3]{"masks", "iou_predictions", "low_res_masks"};
 
   SamModel(const Sam::Parameter& param) {
@@ -58,13 +60,22 @@ struct SamModel {
 #endif
 
     sessionPre = std::make_unique<Ort::Session>(env, wpreModelPath.c_str(), sessionOptions[0]);
-    if (sessionPre->GetInputCount() != 1 || sessionPre->GetOutputCount() != 1) {
+    int targetNumber[]{1, 6};
+
+    bSamHQ = sessionPre->GetOutputCount() == 2;
+    if (bSamHQ) {
+      for (auto& v : targetNumber) {
+        v++;
+      }
+    }
+
+    if (sessionPre->GetInputCount() != 1 || sessionPre->GetOutputCount() != targetNumber[0]) {
       std::cerr << "Preprocessing model not loaded (invalid input/output count)" << std::endl;
       return;
     }
 
     sessionSam = std::make_unique<Ort::Session>(env, wsamModelPath.c_str(), sessionOptions[1]);
-    if (sessionSam->GetInputCount() != 6 || sessionSam->GetOutputCount() != 3) {
+    if (sessionSam->GetInputCount() != targetNumber[1] || sessionSam->GetOutputCount() != 3) {
       std::cerr << "Model not loaded (invalid input/output count)" << std::endl;
       return;
     }
@@ -74,6 +85,14 @@ struct SamModel {
     if (inputShapePre.size() != 4 || outputShapePre.size() != 4) {
       std::cerr << "Preprocessing model not loaded (invalid shape)" << std::endl;
       return;
+    }
+
+    if (bSamHQ) {
+      intermShapePre = sessionSam->GetInputTypeInfo(1).GetTensorTypeAndShapeInfo().GetShape();
+      if (intermShapePre.size() != 5) {
+        std::cerr << "Model not loaded (invalid interm shape)" << std::endl;
+        return;
+      }
     }
 
     bModelLoaded = true;
@@ -110,17 +129,28 @@ struct SamModel {
         memoryInfo, inputTensorValues.data(), inputTensorValues.size(), inputShapePre.data(),
         inputShapePre.size());
 
+    std::vector<Ort::Value> outputTensors;
+
     outputTensorValuesPre = std::vector<float>(outputShapePre[0] * outputShapePre[1] *
                                                outputShapePre[2] * outputShapePre[3]);
-    auto outputTensorPre = Ort::Value::CreateTensor<float>(
+    outputTensors.push_back(Ort::Value::CreateTensor<float>(
         memoryInfo, outputTensorValuesPre.data(), outputTensorValuesPre.size(),
-        outputShapePre.data(), outputShapePre.size());
+        outputShapePre.data(), outputShapePre.size()));
 
-    const char *inputNamesPre[] = {"input"}, *outputNamesPre[] = {"output"};
+    if (bSamHQ) {
+      intermTensorValuesPre =
+          std::vector<float>(intermShapePre[0] * intermShapePre[1] * intermShapePre[2] *
+                             intermShapePre[3] * intermShapePre[4]);
+      outputTensors.push_back(Ort::Value::CreateTensor<float>(
+          memoryInfo, intermTensorValuesPre.data(), intermTensorValuesPre.size(),
+          intermShapePre.data(), intermShapePre.size()));
+    }
 
     Ort::RunOptions run_options;
-    sessionPre->Run(run_options, inputNamesPre, &inputTensor, 1, outputNamesPre, &outputTensorPre,
-                    1);
+    const char *inputNamesPre[] = {"input"}, *outputNamesPre[] = {"output", "interm_embeddings"};
+    sessionPre->Run(run_options, inputNamesPre, &inputTensor, 1, outputNamesPre,
+                    outputTensors.data(), outputTensors.size());
+
     return true;
   }
 
@@ -143,7 +173,7 @@ struct SamModel {
       inputPointValues.push_back((float)point.y);
       inputLabelValues.push_back(0);
     }
-    
+
     if (!roi.empty()) {
       inputPointValues.push_back((float)roi.x);
       inputPointValues.push_back((float)roi.y);
@@ -162,6 +192,15 @@ struct SamModel {
     inputTensorsSam.push_back(Ort::Value::CreateTensor<float>(
         memoryInfo, (float*)outputTensorValuesPre.data(), outputTensorValuesPre.size(),
         outputShapePre.data(), outputShapePre.size()));
+
+    auto inputNames = inputNamesSam;
+    if (bSamHQ) {
+      inputTensorsSam.push_back(Ort::Value::CreateTensor<float>(
+          memoryInfo, (float*)intermTensorValuesPre.data(), intermTensorValuesPre.size(),
+          intermShapePre.data(), intermShapePre.size()));
+      inputNames = inputNamesSamHQ;
+    }
+
     inputTensorsSam.push_back(Ort::Value::CreateTensor<float>(memoryInfo, inputPointValues.data(),
                                                               2 * numPoints, inputPointShape.data(),
                                                               inputPointShape.size()));
@@ -176,7 +215,7 @@ struct SamModel {
         memoryInfo, orig_im_size_values, 2, origImSizeShape.data(), origImSizeShape.size()));
 
     Ort::RunOptions runOptionsSam;
-    auto outputTensorsSam = sessionSam->Run(runOptionsSam, inputNamesSam, inputTensorsSam.data(),
+    auto outputTensorsSam = sessionSam->Run(runOptionsSam, inputNames, inputTensorsSam.data(),
                                             inputTensorsSam.size(), outputNamesSam, 3);
 
     auto outputMasksValues = outputTensorsSam[0].GetTensorMutableData<float>();

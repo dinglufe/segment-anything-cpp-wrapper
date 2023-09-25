@@ -1,6 +1,6 @@
 ## Segment Anything CPP Wrapper
 
-This project is to create a pure C++ inference api for [Segment Anything](https://github.com/facebookresearch/segment-anything) and [MobileSAM](https://github.com/ChaoningZhang/MobileSAM), with no dependence on Python during runtime. The code repository contains a C++ library with a test program to facilitate easy integration of the interface into other projects.
+This project is to create a pure C++ inference api for [Segment Anything](https://github.com/facebookresearch/segment-anything), [MobileSAM](https://github.com/ChaoningZhang/MobileSAM) and [HQ-SAM](https://github.com/SysCV/sam-hq), with no dependence on Python during runtime. The code repository contains a C++ library with a test program to facilitate easy integration of the interface into other projects.
 
 Model loading takes approximately 10 or 1 seconds, and a single inference takes around 20ms, obtained using Intel Xeon W-2145 CPU (16 threads). During runtime, the interface may consume around 6GB or 1GB memory if running on CPU, and 16GB or 1GB if running on CUDA. The "or" here means values for "Segment Anything" or "MobileSAM".
 
@@ -32,6 +32,9 @@ Download compressed file in the release page, unzip it, and run sam_cpp_test dir
 # Example (use MobileSAM)
 ./sam_cpp_test -pre_model="models/mobile_sam_preprocess.onnx" -sam_model="models/mobile_sam.onnx"
 
+# Example (use HQ-SAM)
+./sam_cpp_test -pre_model="models/sam_hq_preprocess.onnx" -sam_model="models/sam_hq_vit_h.onnx"
+
 # Example (change image)
 ./sam_cpp_test -image="images/input2.jpg"
 ```
@@ -48,6 +51,8 @@ Sam sam(param);
 
 // Use MobileSAM
 Sam::Parameter param("mobile_sam_preprocess.onnx", "mobile_sam.onnx", std::thread::hardware_concurrency());
+// Use HQ-SAM
+Sam::Parameter param("sam_hq_preprocess.onnx", "sam_hq_vit_h.onnx", std::thread::hardware_concurrency());
 
 auto inputSize = sam.getInputSize();
 cv::Mat image = cv::imread("input.jpg", -1);
@@ -94,6 +99,12 @@ The [export_pre_model](export_pre_model.py) script exports these operations as a
 The [export_pre_model](export_pre_model.py) script needs to be modified to switch between Segment-anything and MobileSAM:
 
 ```Python
+output_names = ['output']
+
+# Generate preprocessing model of Segment-anything in onnx format
+# Use original segment-anything, Mobile-SAM or HQ-SAM model
+# Each in a separate Python virtual environment
+
 # Uncomment the following lines to generate preprocessing model of Segment-anything
 # import segment_anything as SAM
 # # Download Segment-anything model "sam_vit_h_4b8939.pth" from https://github.com/facebookresearch/segment-anything#model-checkpoints
@@ -103,12 +114,26 @@ The [export_pre_model](export_pre_model.py) script needs to be modified to switc
 # output_path = 'models/sam_preprocess.onnx'
 # quantize = True
 
-# Uncomment the following lines to generate preprocessing model of Mobile-SAM
-# Download Mobile-SAM model "mobile_sam.pt" from https://github.com/ChaoningZhang/MobileSAM/blob/master/weights/mobile_sam.pt
-checkpoint = 'mobile_sam.pt'
-model_type = 'vit_t'
-output_path = 'models/mobile_sam_preprocess.onnx'
-quantize = False
+# Mobile-SAM
+# # Download Mobile-SAM model "mobile_sam.pt" from https://github.com/ChaoningZhang/MobileSAM/blob/master/weights/mobile_sam.pt
+# import mobile_sam as SAM
+# checkpoint = 'mobile_sam.pt'
+# model_type = 'vit_t'
+# output_path = 'models/mobile_sam_preprocess.onnx'
+# quantize = False
+
+# HQ-SAM
+# # Download Mobile-SAM model "sam_hq_vit_h.pt" from https://github.com/SysCV/sam-hq#model-checkpoints
+# # Installation: https://github.com/SysCV/sam-hq#quick-installation-via-pip
+import segment_anything as SAM
+checkpoint = 'sam_hq_vit_h.pth'
+model_type = 'vit_h'
+output_path = 'models/sam_hq_preprocess.onnx'
+quantize = True
+output_names = ['output', 'interm_embeddings']
+
+# Target image size is 1024x720
+image_size = (1024, 720)
 ```
 
 ```bash
