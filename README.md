@@ -1,6 +1,6 @@
 ## Segment Anything CPP Wrapper
 
-This project is to create a pure C++ inference api for [Segment Anything](https://github.com/facebookresearch/segment-anything), [MobileSAM](https://github.com/ChaoningZhang/MobileSAM) and [HQ-SAM](https://github.com/SysCV/sam-hq), with no dependence on Python during runtime. The code repository contains a C++ library with a test program to facilitate easy integration of the interface into other projects.
+This project is to create a pure C++ inference api for [Segment Anything](https://github.com/facebookresearch/segment-anything), [MobileSAM](https://github.com/ChaoningZhang/MobileSAM), [HQ-SAM](https://github.com/SysCV/sam-hq) and [EdgeSAM](https://github.com/chongzhou96/EdgeSAM), with no dependence on Python during runtime. The code repository contains a C++ library with a test program to facilitate easy integration of the interface into other projects.
 
 Model loading takes approximately 10 or 1 seconds, and a single inference takes around 20ms, obtained using Intel Xeon W-2145 CPU (16 threads). During runtime, the interface may consume around 6GB or 1GB memory if running on CPU, and 16GB or 1GB if running on CUDA. The "or" here means values for "Segment Anything" or "MobileSAM".
 
@@ -11,7 +11,7 @@ Currently, this program has been thoroughly tested on Windows and may encounter 
 
 Video demo [link](https://youtu.be/6NyobtZoPKc)
 
-Image by <a href="https://pixabay.com/users/brenda2102-30343687/?utm_source=link-attribution&amp;utm_medium=referral&amp;utm_campaign=image&amp;utm_content=7918031">Brenda</a> from <a href="https://pixabay.com//?utm_source=link-attribution&amp;utm_medium=referral&amp;utm_campaign=image&amp;utm_content=7918031">Pixabay</a> and key recorded by [KeyCastOW](https://github.com/brookhong/KeyCastOW)
+Image courtesy of [Brenda](https://pixabay.com/users/brenda2102-30343687/?utm_source=link-attribution&utm_medium=referral&utm_campaign=image&utm_content=7918031) on [Pixabay](https://pixabay.com//?utm_source=link-attribution&utm_medium=referral&utm_campaign=image&utm_content=7918031), and keystrokes recorded using [KeyCastOW](https://github.com/brookhong/KeyCastOW).
 
 Usage:
 
@@ -34,6 +34,9 @@ Download compressed file in the release page, unzip it, and run sam_cpp_test dir
 
 # Example (use HQ-SAM)
 ./sam_cpp_test -pre_model="models/sam_hq_preprocess.onnx" -sam_model="models/sam_hq_vit_h.onnx"
+
+# Example (use EdgeSAM)
+./sam_cpp_test -pre_model="models/edge_sam_3x_encoder.onnx" -sam_model="models/edge_sam_3x_decoder.onnx"
 
 # Example (change image)
 ./sam_cpp_test -image="images/input2.jpg"
